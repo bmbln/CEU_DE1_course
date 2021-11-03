@@ -83,7 +83,7 @@ BEGIN
 	CREATE VIEW order_size AS
 		SELECT
 			m.qty_type as `Order size category`,
-			concat(cast(SUM(m.ototal) AS DECIMAL(14,0)),' EUR') as `Total value of forders`,
+			concat(cast(SUM(m.ototal) AS DECIMAL(14,0)),' EUR') as `Total value of orders`,
 			COUNT(m.qty_type) as `Number of orders`,
 			concat(cast(
 				SUM(m.ototal)/(SELECT sum(w.base_total + w.correction) FROM dw_postcards w)*100
