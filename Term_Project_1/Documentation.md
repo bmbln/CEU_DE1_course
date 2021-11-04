@@ -117,9 +117,12 @@ Customer table:
 - the `standard_name`s, `name`s and `ZIP`s were selected from the different tables and appended. `SELECT DISTINCT` was used. 
 
 ## Analytics plan and Analytical layer
+As outlined in the intro, I’m planning to 
+- identify large, returning Customers who are purchasing a lot, oftentimes via different sales channels  
+- analyze market performance by countries   
+- analyze order size 
 
-My analytics plan is the following:
-
+Executed with the foolowing steps:
 - Loading in data [`Postcards_database.sql`](https://github.com/bmbln/CEU_DE1_course/blob/335754ab55738b882c9d32d458803b2868e9a4d4/Term_Project_1/data_and_queries/Postcards_database.sql) 
 - Create ETL pipeline in stored procedure for the denormalised data warehouse [`ETL_postcards_dw.sql`](https://github.com/bmbln/CEU_DE1_course/blob/e713939c1cef928733d6934db4cb754c315c38f6/Term_Project_1/data_and_queries/ETL_postcards_dw.sql) 
 - Create ETL pipeline in stored procedures for data marts [`ETL_data_marts.sql`](https://github.com/bmbln/CEU_DE1_course/blob/e713939c1cef928733d6934db4cb754c315c38f6/Term_Project_1/data_and_queries/ETL_data_marts.sql) 
