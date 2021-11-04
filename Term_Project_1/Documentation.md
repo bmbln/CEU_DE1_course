@@ -88,20 +88,20 @@ In the operational layer, sales data is split into different tables according to
 </p>
 
 ### eBay channels
-The 3 of them (`de_`, `fr_`, `us_`) have the same logic: 
+The 3 of them (`de_`, `fr_`, `us_`) have the same logic, the following 3 tables were created: 
 - address: `country`, `name` and `ZIP` of the Customer, `standard_name` of the Customer (see `Customer` table), `address_id`  
 - orders: `sale date`, `total` amount paid (shipping fee incl.), `currency` (EUR/USD), `sales_id` and `address_id` (ref. to address tables). There is a different `ID` due to data problems
 -	order content: `ebay_id` (identifier of single object), unique `ID` (`ebay_id` might be wrong and duplicated), `price` of the unique postcard and `quantity` purchased, `sale_id` (ref. to orders table)  
 
 ### HipPostcard
-Slightly different content due to different information structure: 
-- address: `country`, `first_name` and `last_name`, `ZIP` of the customer, `standard_name` (see `Customer` table) and `address_id`  
+Slightly different content due to different information structur, ethe following 3 tables were created: 
+- address: `country`, `buyer_firstname` and `buyer_lastname`, `ZIP` of the customer, `standard_name` (see `Customer` table) and `address_id`  
 - orders: `sales_date`, `total` amount paid (without shipping fee), `postage` paid, `currency` (EUR/USD), `sales_id` and `address_id` (ref. to address table). There is a different `ID` due to data problems
 - order content: `hip_id` (identifier of single object), unique `ID` (`hip_id` might be wrong and duplicated), `price` of the unique postcard and `quantity` purchased, `sale_id` (ref. to orders table)
 
 ### Delcampe
 Only a single table, because we don’t have order level data:  
-- `first_name` and `surname`, `country` and `ZIP` of Customers, `standard_name` (see `Customer` table), `price`, `currency` and `quantity` of the given postcard purchased, `sales_date`
+- `buyer_firstname` and `buyer_surname`, `country` and `ZIP` of Customers, `standard_name` (see `Customer` table), `price`, `currency` and `quantity` of the given postcard purchased, `sales_date`
 
 ### Auxiliary tables
 Currency exchange rates:  
