@@ -1,9 +1,9 @@
 # Sales of vintage postcards – real dataset
-This folder contains all my work files used for the term project 1 in Data Engineering 1. I built a MySQL schema using the sales and stock database of a previous client of mine on vintage postcards.  
+I built a MySQL schema using the sales and stock database of a previous client of mine on vintage postcards.  
 
 In this project, I’m planning to 
 - identify large, returning Customers who are purchasing a lot, oftentimes via different sales channels  
-- analyze market performance (country level)  
+- analyze market performance by countries   
 - analyze order size  
 
 ## Data source – nature and challenges  
@@ -39,6 +39,7 @@ It might be worth noting that the database is filled with unnecessary data and v
 ### Partially overlapping stocks 
 
 Different sales channels aren’t only used for broader accessibility of the items, but also for specialization purposes. Therefore, some items are listed on some platforms but aren’t on others. Due to listing mistakes, overlapping might be also incomplete even though it should exist.  
+
 The underlying logic is that everything is listed on Delcampe and eBay France.  
 - HipPostcard is an automatic copy of eBay France stock (incomplete copy due to poor performance of Hip’s own synchronization system). 
 - eBay Germany was created as a narrowed down version of eBay France – items migrated from eBay France upon creation, later new items are listed there as well. 
@@ -75,61 +76,105 @@ Additionally, EUR_USD exchange rates were downloaded from the [European Central 
 
 An auxiliary table was also created for constructing “real” order level based on shipping days.  
 
-<br><br>
-
 ## Operational layer  
-Operational layer was created using the [following query](https://github.com/bmbln/CEU_DE1_course/blob/335754ab55738b882c9d32d458803b2868e9a4d4/Term_Project_1/data_and_queries/Postcards_database.sql)  
-- Kindly pay attention to change path in line 32 for reading csv file.  
-- Some warnings: Sales dates were downloaded as datetime but stored as date – SQL truncates the values. Exchange rates are stored as dates, we can save extra steps in ETL and no loss of relevant information after this truncate.  
+Operational layer was created using the [following query](https://github.com/bmbln/CEU_DE1_course/blob/335754ab55738b882c9d32d458803b2868e9a4d4/Term_Project_1/data_and_queries/Postcards_database.sql) `Postcards_database.sql`
+- Kindly pay attention to change path in line 32 and `LINE ENDING` in line 35 for reading `.csv` file according to local environment. 
+- Some warnings: Sales dates were downloaded as datetime but stored as date – SQL truncates the values and sends warning messages. Exchange rates are stored as dates, we can save extra steps in ETL and no loss of relevant information after this truncate.  
 
-In the operational layer, sales data is split into different tables according to the sales channel logic.  
-The 3 eBay channels (`de_`, `fr_`, `us_`) have the same logic: 
+In the operational layer, sales data is split into different tables according to the sales channel logic. 
+
+<p align="center">
+  <img width="70%" src="https://github.com/bmbln/CEU_DE1_course/blob/e713939c1cef928733d6934db4cb754c315c38f6/Term_Project_1/pictures/operational_layer.png">
+</p>
+
+### eBay channels
+The 3 of them (`de_`, `fr_`, `us_`) have the same logic: 
 - address: `country`, `name` and `ZIP` of the Customer, `standard_name` of the Customer (see `Customer` table), `address_id`  
 - orders: `sale date`, `total` amount paid (shipping fee incl.), `currency` (EUR/USD), `sales_id` and `address_id` (ref. to address tables). There is a different `ID` due to data problems
 -	order content: `ebay_id` (identifier of single object), unique `ID` (`ebay_id` might be wrong and duplicated), `price` of the unique postcard and `quantity` purchased, `sale_id` (ref. to orders table)  
 
-HipPostcard has a slightly different content due to different information structure:
-•	address: country, first and last names, ZIP of the customer, standard_name of the Customer (see Customer table) and address_id
-•	orders: sale date, total amount paid (without shipping fee), postage paid, currency (EUR/USD), sales_id and address_id (ref. to address table). There is a different ID due to data problems
-•	order content: hip_id (identifier of single object), unique ID (hip_id might be wrong and duplicated), price of the unique postcard and quantity purchased, sale_id (ref. to orders table)
-Delcampe is a single table, because we don’t have order level data:
-•	First and last names, country and ZIP of Customers, standard_name of the Customer (see Customer table), price, currency and quantity of the given postcard purchased, sale date
-Auxiliary tables:
-•	currency exchange rates: date and EUR/USD rates
-•	shipping days table: date, shipping day
-o	using stored procedures, an empty table was populated with dates from 24/07/2019 (earliest sale date in the dataset) and today. Shipping day value constructed based on year, week and week of the day (basically postcards purchased between Monday and Thursday are ‘day 1’, between Friday and Sunday ‘day 2’ per weeks and years). It is necessary for the analytical layer so we can use the Delcampe sales data, and the other sales channels are cleaned as well. 
-•	Customer table: id, standard_name, name, ZIP
-o	in order to identify cross-channel buyers, a standard customer key was constructed by concatenating name (or first and last name) and ZIP code in each relevant table. White spaces and special characters were removed so we won’t miss a match. Some cross-buyers still won’t be matched or various reasons (uses different shipping addresses for different orders or serious typo, etc.), but we still gained some matches.
-o	the standard_names, names and ZIP were selected from the different tables and appended. SELECT DISTINCT was used. 
-Analytical layer
-The creation of the denormalized data warehouse is tricky because we need to bring the different sales channels on similar structures, recalculate values based on currencies, then append the tables. In the warehouse each row is an order on “real” order level (see explanation of “real” order level in “item and sale characteristics” section) between 03/11/2020 and 28/10/2021. 
-Unlike in every decent programming language, stored procedures in SQL can’t take table names as parameters, therefore I couldn’t save time on eBay channels (same structure). 
-For each eBay channels, the first step aggregated information on the original order level:
-•	calculating shipping fees (+ taxes) and corrections. In the order tables, the total amount paid was indicated, the sum of prices from the order content tables was deducted. If positive, then taken as shipping fees (+taxes are also included in some cases), if negative then considered as corrections, because in some cases discounts are applied on the final invoice or some items were refunded because of physically missing from stock. Unfortunately, the original database doesn’t indicate in the order content table if the item was refunded, nor is the postage fee treated properly, therefore it brings a slight bias into the analysis – no postage fee for corrected invoices even though in reality, they had shipping fee. 
-•	quantity of postcards aggregated from order content table
-For each eBay channels, the second step aggregated information on the “real” order level:
-•	grouped by customer (standard_name) and shipping day
-•	values recalculated in EUR when necessary
-For HipPostcard, the steps were the same, but the total in the original table is without shipping fee and we have distinct variable for shipping. The calculations were slightly different, accordingly. 
-For Delcampe, we don’t have order level data, so we had to construct it in one step on “real” order level (based on shipping days):
-•	business as usual, for orders above 70 EUR 7 EUR is charged as shipping fee and 2 EUR below. It is an estimate, sometimes shipping is for free or 7 EUR even below 70 EUR if the Customer requested tracked shipment. 
-•	corrections are 0, we have no information on it
-•	Everything is in EUR, so no need to recalculate values
-For each channel, I run some cleaning:
-•	excluding orders that potentially contained lots from the 6th channel. The price of these items is always an integer, so they can be identified with MOD() functions. Some auctions that were sold on a whole number price might be lost, but it’s a less serious issue. The American eBay was excluded from this cleaning process, because it isn’t spoiled with 6th channel items.
-•	where the sum of base_total and the correction is below 2 EUR (cheapest item in the whole shop is 2.99 EUR) so the refunded or otherwise problematic orders are excluded
+### HipPostcard
+Slightly different content due to different information structure: 
+- address: `country`, `first_name` and `last_name`, `ZIP` of the customer, `standard_name` (see `Customer` table) and `address_id`  
+- orders: `sales_date`, `total` amount paid (without shipping fee), `postage` paid, `currency` (EUR/USD), `sales_id` and `address_id` (ref. to address table). There is a different `ID` due to data problems
+- order content: `hip_id` (identifier of single object), unique `ID` (`hip_id` might be wrong and duplicated), `price` of the unique postcard and `quantity` purchased, `sale_id` (ref. to orders table)
+
+### Delcampe
+Only a single table, because we don’t have order level data:  
+- `first_name` and `surname`, `country` and `ZIP` of Customers, `standard_name` (see `Customer` table), `price`, `currency` and `quantity` of the given postcard purchased, `sales_date`
+
+### Auxiliary tables
+Currency exchange rates:  
+- `date` and EUR/USD `rates`  
+
+Shipping days table:  
+- `date`, `shipping_day`  
+- using stored procedures, an empty table was populated with dates from 24/07/2019 (earliest sale date in the dataset) and today. `shipping_day` value constructed based on year, week and week of the day (basically postcards purchased between Monday and Thursday are `day_1`, between Friday and Sunday `day_2` per weeks and years). It is necessary for the analytical layer so we can use the Delcampe sales data, and the other sales channels are cleaned as well.  
+ 
+Customer table: 
+- `id`, `standard_name`, `name`, `ZIP`  
+-	in order to identify cross-channel buyers, a standard customer key was constructed by concatenating name (or first and last name) and ZIP code in each relevant table. White spaces and special characters were removed so we won’t miss a match. Some cross-buyers still won’t be matched for various reasons (uses different shipping addresses for different orders or serious typo, etc.), but we still gained some matches.  
+- the `standard_name`s, `name`s and `ZIP`s were selected from the different tables and appended. `SELECT DISTINCT` was used. 
+
+## Analytics plan and Analytical layer
+
+My analytics plan is the following:
+
+- Loading in data [`Postcards_database.sql`](https://github.com/bmbln/CEU_DE1_course/blob/335754ab55738b882c9d32d458803b2868e9a4d4/Term_Project_1/data_and_queries/Postcards_database.sql) 
+- Create ETL pipeline in stored procedure for the denormalised data warehouse [`ETL_postcards_dw.sql`](https://github.com/bmbln/CEU_DE1_course/blob/e713939c1cef928733d6934db4cb754c315c38f6/Term_Project_1/data_and_queries/ETL_postcards_dw.sql) 
+- Create ETL pipeline in stored procedures for data marts [`ETL_data_marts.sql`](https://github.com/bmbln/CEU_DE1_course/blob/e713939c1cef928733d6934db4cb754c315c38f6/Term_Project_1/data_and_queries/ETL_data_marts.sql) 
+
+The creation of the denormalized data warehouse is tricky because we need to **bring the different sales channels on similar structures** (different joins and logic needed), **recalculate some values** based on currencies, then **append the tables**. In the warehouse each row is an order on *real order level* (see explanation of *real order level* in *item and sale characteristics* section) between 03/11/2020 and 28/10/2021.
+
+### eBay channels
+Unlike in every decent programming language, stored procedures in SQL can’t take table names as parameters, therefore I couldn’t save time on eBay channels even though they share the same structures. 
+
+The first step aggregated information on the original order level:  
+- 3 tables joined (order, order content, shiping address)
+- calculating shipping fees (+ taxes) and corrections. In the order tables, the total amount paid was indicated, the sum of prices from the order content tables was deducted. If positive, then taken as shipping fees (+ taxes are also included for some extra-EU countries), if negative then considered as corrections, because in some cases discounts are applied on the final invoice or some items were refunded because of physically missing from stock. Unfortunately, the original database doesn’t indicate in the order content table if the item was refunded, nor is the postage fee treated properly, therefore it brings a slight bias into the analysis – no postage fee for corrected invoices even though in reality, they had shipping fee. 
+- quantity of postcards aggregated from order content table
+
+The second step aggregated information on the *real order level*:
+- grouped by customer (`standard_name`) and shipping day
+-	values recalculated in EUR when necessary
+
+### HipPostcard 
+The steps were the same as for eBay, but the total in the original table is without shipping fee and we have distinct variable for shipping. The calculations were slightly different, accordingly. 
+
+### Delcampe
+We don’t have order level data, so we had to construct it in one step on *real order level* (based on shipping days):
+- business as usual, for orders above 70 EUR 7 EUR is charged as shipping fee and 2 EUR below. It is an estimate, sometimes shipping is for free or 7 EUR even below 70 EUR if the Customer requested tracked shipment. 
+-	corrections are 0, we have no information on it
+- Everything is in EUR, so no need to recalculate values
+
+### Cleaning
+For each channel, I run some cleaning by excluding orders (on the original order level):
+- that potentially contained lots from the 6th channel. The price of these items is always an integer, so they can be identified with MOD() functions. Some auctions that were sold on a whole number price might be lost, but it’s a less serious issue. The American eBay was excluded from this cleaning process, because it isn’t spoiled with 6th channel items and auctions are the main players.
+-	where the `sum` of `base_total` and the correction is below 2 EUR (cheapest item in the whole shop is 2.99 EUR). Therefore the refunded or otherwise problematic orders are excluded. 
+
 The 4 normalized tables were appended. Variable types were formatted to decimals as a final touch. 
-Data mart
-3 data marts were created as views in stored procedures. It could have been great to use sales channels as parameters in the 2nd and 3rd marts and define TOP “how many” Customers we want to see, but MySQL doesn’t take parameters in views. Nor does the LIMIT clause accept parameters. 
-Large customers
-The data mart identifies the TOP 20 largest (cross-channel) Customers and aggregates their purchases. Ordered by total purchases. 
-It displays the Customer name and the country they reside in. Total order value, average order value, average price of purchased postcards, number of postcards ordered and their share in total turnover across sales-channels. For a better view, the values are formatted in EUR or %
+
+## Data mart
+3 data marts were created as views in stored procedures.  
+It could have been great to use sales channels as parameters in the 2nd and 3rd marts and define TOP “how many” Customers we want to see, but MySQL doesn’t take parameters in views. Nor does the `LIMIT` clause accept parameters. 
+
+### Large customers
+The data mart identifies the TOP 20 largest (cross-channel) Customers and aggregates their purchases. Ordered by total purchases.  
+
+It displays the Customer name and the country they reside in. Total order value, average order value, average price of purchased postcards, number of postcards ordered and their share in total turnover across sales-channels. For a better view, the values are formatted in EUR or %  
+
 Yes, there were 3 Customers who spent over 3000 EUR on vintage postcards the last year accounting for 5% of the total turnover…
-Largest markets
-The data mart aggregates purchases across sales channels by countries. There is no LIMIT clause in displaying TOP markets, it’s a general overview. 
-It displays country name, total order value, number of postcards purchased, number of orders, average order value, average price of purchased postcards, largest and smallest order value. It also calculates shares in turnover, total number of purchased postcards and total order numbers. For a better view, the values are formatted in EUR or % here as well. 
-Unsurprisingly, the largest markets correspond to the eBay sales channels. France is ahead of every other market accounting for a third of the total turnover. With Germany and the US, the TOP 3 market’s share is 2/3. 
-Order size
-For the data mart, 3 order size categories were created based on how many postcards the given orders contain. The point is to see the prevalence of very small orders with 1 postcard only. The size categories: 1 card, 2-5 cards, 6-10 cards and over 11 cards. 
-It displays order size category, total value of orders per category, number of orders, share in total turnover and number of orders, average order value, smallest and largest order values. For a better view, the values are formatted in EUR or % here as well.
+
+### Largest markets
+The data mart aggregates purchases across sales channels by countries. There is no LIMIT clause in displaying TOP markets, it’s a general overview.  
+
+It displays country name, total order value, number of postcards purchased, number of orders, average order value, average price of purchased postcards, largest and smallest order value. It also calculates shares in turnover, total number of purchased postcards and total order numbers. For a better view, the values are formatted in EUR or % here as well.  
+
+Unsurprisingly, the largest markets correspond to the eBay sales channels. France is ahead of every other market accounting for a third of the total turnover. With Germany and the US, the TOP 3 market’s share is 2/3.  
+
+### Order size
+For the data mart, 3 order size categories were created based on how many postcards the given orders contain. The point is to see the prevalence of very small orders with 1 postcard only. The size categories: 1 card, 2-5 cards, 6-10 cards and over 11 cards.  
+
+It displays order size category, total value of orders per category, number of orders, share in total turnover and number of orders, average order value, smallest and largest order values. For a better view, the values are formatted in EUR or % here as well.  
+
 Very small orders with only one card are quite frequent, almost ¾ of the orders are this small but they only account for a third of the turnover. Large orders with over 11 cards only account for 3% of the number of orders but they bring a quarter of the total turnover. 
